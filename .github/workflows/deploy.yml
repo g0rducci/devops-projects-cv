@@ -1,3 +1,4 @@
+
 name: CI/CD with Terraform
 on: [push]
 env:
@@ -11,6 +12,8 @@ env:
 jobs:
   deploy-infra:
     runs-on: ubuntu-latest
+    outputs:
+      SERVER_PUBLIC_IP: ${{ steps.set-ip.outputs.instance_public_ip}}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -18,14 +21,14 @@ jobs:
         uses: hashicorp/setup-terraform@v1
         with:
           terraform_wrapper: false
-      - name: Terraform init2
+      - name: Terraform init
         id: init
         run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="region=us-east-1"
         working-directory: ./terraform
       - name: Terraform Plan
         id: plan
         run: |-
-          terraform plan \
+          terraform plan -destroy \
           -var="region=us-east-1" \
           -var="public_key=$PUBLIC_SSH_KEY" \
           -var="private_key=$PRIVATE_SSH_KEY" \
@@ -35,6 +38,11 @@ jobs:
       - name: Terraform Apply
         id: apply
         run: terraform apply PLAN
+        working-directory: ./terraform
+      - name: Set output
+        id: set-ip
+        run: |-
+          echo "::set-output name=instance_public_ip::$(terraform output instance_public_ip)"
         working-directory: ./terraform
   deploy-app:
     runs-on: ubuntu-latest
@@ -47,7 +55,7 @@ jobs:
       - name: Login to AWS ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
-      - name: Build, push docker image v2
+      - name: Build, push docker image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: example-node-app
